@@ -2,11 +2,19 @@ const express = require("express");
 const http = require("http");
 const { Server } = require("socket.io");
 const cors = require("cors");
-
+const mongoose = require("mongoose");
 const app = express();
 const server = http.createServer(app);
 const io = new Server(server, { cors: { origin: "*" } });
-
+mongoose.connect("mongodb+srv://Rohith:Rohith_14_IM_@cluster0.a19xa.mongodb.net/", {
+  
+});
+const db = mongoose.connection;
+db.on("error", console.error.bind(console, "MongoDB connection error:"));
+db.once("open", () => {
+  console.log("Connected to MongoDB");
+});
+const Message=require('./models/Message');
 const users = {}; 
 app.use(cors());
 app.use(express.json());
@@ -20,12 +28,30 @@ io.on("connection", (socket) => {
     io.emit("online_users", Object.keys(users)); 
   });
 
-  socket.on("private_message", ({ sender, recipient, message }) => {
+  socket.on("private_message", async ({ sender, recipient, message }) => {
+    const newMessage = new Message({ sender, recipient, content: message });
+    await newMessage.save();
+
     const recipientSocketId = users[recipient];
     if (recipientSocketId) {
       io.to(recipientSocketId).emit("private_message", { sender, message });
     } else {
       socket.emit("error", "Recipient is not online.");
+    }
+  });
+  socket.on("get_chat_history", async ({ user1, user2 }) => {
+    try {
+      const history = await Message.find({
+        $or: [
+          { sender: user1, recipient: user2 },
+          { sender: user2, recipient: user1 },
+        ],
+      }).sort("timestamp");
+
+      socket.emit("chat_history", history);
+    } catch (err) {
+      console.error("Error fetching chat history:", err);
+      socket.emit("error", "Failed to fetch chat history.");
     }
   });
   socket.on("disconnect", () => {
