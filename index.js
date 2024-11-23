@@ -39,6 +39,45 @@ io.on("connection", (socket) => {
       socket.emit("error", "Recipient is not online.");
     }
   });
+  socket.on("get_recent_chats", async (username) => {
+    try {
+      const recentChats = await Message.aggregate([
+        {
+          $match: {
+            $or: [{ sender: username }, { recipient: username }],
+          },
+        },
+        {
+          $group: {
+            _id: {
+              chatPartner: {
+                $cond: [
+                  { $eq: ["$sender", username] },
+                  "$recipient",
+                  "$sender",
+                ],
+              },
+            },
+            lastMessage: { $last: "$content" },
+            lastTimestamp: { $last: "$timestamp" },
+          },
+        },
+        { $sort: { lastTimestamp: -1 } }, 
+      ]);
+  
+     
+      const recentChatsWithStatus = recentChats.map((chat) => ({
+        ...chat,
+        isOnline: !!users[chat._id.chatPartner],
+      }));
+  
+      socket.emit("recent_chats", recentChatsWithStatus);
+    } catch (err) {
+      console.error("Error fetching recent chats:", err);
+      socket.emit("error", "Failed to fetch recent chats.");
+    }
+  });
+  
   socket.on("get_chat_history", async ({ user1, user2 }) => {
     try {
       const history = await Message.find({
